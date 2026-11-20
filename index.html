@@ -984,7 +984,8 @@ textarea{min-height:76px}
 </section>
 <div id="modal" class="modal" onclick="if(event.target===this)closeModal()"><div class="modalbox"><button class="close" onclick="closeModal()">FECHAR</button><div id="modalContent" style="padding-top:22px"></div></div></div>
 <script>
-const ADMIN_UID='2Aq4aFE9CBZGqLX9aG4BylFDe1v2';
+const ADMIN_UIDS=['2Aq4aFE9CBZGqLX9aG4BylFDe1v2','1JqYHzYcR3fRWN2erdIcrLMXHl83','5HHS0Yi1XzXWT7vaPz4bZaAAmcb2'];
+function isAdminUid(uid){return ADMIN_UIDS.includes(uid)}
 let rankingMode='ap';
 let pendingAvatar='';
 const $=id=>document.getElementById(id);
@@ -996,7 +997,7 @@ function saveUsers(v){
  for(const [name,record] of Object.entries(v)){
   if(JSON.stringify(old[name])===JSON.stringify(record))continue;
   if(!_authUser)return;
-  const isSelf=name===_myUsername, isAdmin=_authUser.uid===ADMIN_UID;
+  const isSelf=name===_myUsername, isAdmin=isAdminUid(_authUser.uid);
   if(!isSelf&&!isAdmin)continue;
   window.__neoFirebase?.saveUser(name,record,isSelf,isAdmin).catch(e=>console.error('Falha ao salvar usuário',e));
  }
@@ -1145,7 +1146,7 @@ function removeOnlyTestBot(){
 
 function init(){window.__neoFirebase?.ready.then(()=>window.__neoFirebase.restore()).catch(e=>console.error('Firebase init',e));}
 
-function openAdminEntry(){if(!_authUser||_authUser.uid!==ADMIN_UID){alert('Acesso restrito ao administrador autorizado.');return;}showAdminPanel()}
+function openAdminEntry(){if(!_authUser||!isAdminUid(_authUser.uid)){alert('Acesso restrito ao administrador autorizado.');return;}showAdminPanel()}
 function closeAdminLogin(){$('adminLoginPanel').classList.add('hidden');$('rankTablePanel').classList.remove('hidden')}
 function verifyAdminCode(){openAdminEntry()}
 function showAdminPanel(){$('rankTablePanel').classList.add('hidden');$('adminPanel').classList.remove('hidden');let arr=Object.entries(users());$('adminPlayer').innerHTML=arr.map(([n,v])=>`<option value="${esc(n)}">${esc(v.profile?.displayName||n)} (@${esc(n)})</option>`).join('');loadAdminPlayer()}
@@ -1176,7 +1177,7 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, si
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
 const firebaseConfig={apiKey:"AIzaSyBcYdPHT_jug7Av0gY9ZuulVCmCD_lVNOI",authDomain:"mod-neo.firebaseapp.com",projectId:"mod-neo",storageBucket:"mod-neo.firebasestorage.app",messagingSenderId:"219596296534",appId:"1:219596296534:web:b19d3e7686ef9089c0c6f7"};
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
-const ADMIN_UID="2Aq4aFE9CBZGqLX9aG4BylFDe1v2";let currentNick="",userUnsub=null,roomUnsub=null,creatingAccount=false;
+const ADMIN_UIDS=new Set(["2Aq4aFE9CBZGqLX9aG4BylFDe1v2","1JqYHzYcR3fRWN2erdIcrLMXHl83","5HHS0Yi1XzXWT7vaPz4bZaAAmcb2"]);let currentNick="",userUnsub=null,roomUnsub=null,creatingAccount=false;
 const alias=n=>`${n}@mod-neo.firebaseapp.com`;
 function err(code){const e=new Error(code);e.code=code;return e;}
 async function register(n,p){
