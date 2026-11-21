@@ -989,7 +989,7 @@ function isAdminUid(uid){return ADMIN_UIDS.includes(uid)}
 let rankingMode='ap';
 let pendingAvatar='';
 const $=id=>document.getElementById(id);
-var _usersCache={},_roomsCache={},_authUser=null,_myUsername='',_userUnsub=null,_roomUnsub=null,_userSnapshot={},_roomSnapshot={};
+var _usersCache={},_roomsCache={},_apResultsCache={},_authUser=null,_myUsername='',_userUnsub=null,_roomUnsub=null,_resultUnsub=null,_userSnapshot={},_roomSnapshot={};
 function users(){return _usersCache} function rooms(){return _roomsCache}
 function me(){let n=_myUsername;return n&&_usersCache[n]?{username:n,..._usersCache[n]}:null}
 function saveUsers(v){
@@ -1009,7 +1009,7 @@ function saveRooms(v){
   if(JSON.stringify(old[id])===JSON.stringify(record))continue;
   window.__neoFirebase?.saveRoom(id,record).catch(e=>{console.error('Falha ao salvar sala',e);alert('Não foi possível sincronizar a sala. Confira as permissões do Firestore.');});
  }
- for(const id of Object.keys(old))if(!v[id])window.__neoFirebase?.deleteRoom(id).catch(e=>console.error(e));
+ // Nunca apagar documentos de salas automaticamente: o histórico delas sustenta resultados antigos.
  _roomSnapshot=JSON.parse(JSON.stringify(v));
 }
 function showRegister(){$('loginForm').classList.add('hidden');$('registerForm').classList.remove('hidden')}
@@ -1056,9 +1056,11 @@ function configure(id){let r=rooms()[id],creator=r.creator===me().username,first
 function confirmSetup(id){let ap=parseCents($('apValue').value),fee=parseCents($('apFee').value),r=rooms()[id];if(!Number.isSafeInteger(ap)||!Number.isSafeInteger(fee))return alert('Informe valores válidos.');let host=r.history.length===0?$('apHost').value:null;
  openModal(`<div class="eyebrow">CONFIRMAÇÃO</div><h2>Revisar partida</h2><div class="resultbox"><div class="resultrow"><span>Modalidade</span><b>X${r.size}</b></div><div class="resultrow"><span>Valor AP</span><b>${money(ap)}</b></div><div class="resultrow"><span>Taxa</span><b>${money(fee)}</b></div><div class="resultrow"><span>HOST</span><b>${host?esc(profileFor(host).name):'Não existe após a primeira rodada'}</b></div></div><div class="btnrow"><button class="btn" onclick="startMatch('${id}',${ap},${fee},'${host||''}')">CONFIRMAR E INICIAR</button><button class="btn secondary" onclick="configure('${id}')">VOLTAR</button></div>`)}
 function startMatch(id,ap,fee,host){let all=rooms(),r=all[id];if(!r||r.creator!==me().username||r.current||r.status==='closed'||r.players.length!==r.size||(!r.history.length&&!host)||(r.history.length&&host))return alert('Não foi possível iniciar esta rodada.');r.current={ap,fee,host:host||null};r.lastAp=ap;r.lastFee=fee;r.lastHost=host||null;saveRooms(all);openRoom(id)}
-function recordResult(id,result){let all=rooms(),r=all[id];if(!r||r.creator!==me().username||!r.current||r.status==='closed')return;let c=r.current,n=r.players.length,first=!r.history.length,hi=Math.max(0,r.players.indexOf(c.host)),shares,total;
+async function recordResult(id,result){let all=rooms(),r=all[id];if(!r||r.creator!==me().username||!r.current||r.status==='closed')return;let c=r.current,n=r.players.length,first=!r.history.length,hi=Math.max(0,r.players.indexOf(c.host)),shares,total;
  if(result==='WIN'){let gross=2*c.ap-c.fee;if(first&&c.host){let remainder=gross-c.ap,each=Math.round(remainder/n);shares=Array(n).fill(each);shares[hi]+=c.ap;total=shares.reduce((a,b)=>a+b,0)}else{total=gross;shares=distributeCents(total,n,0)}}else{total=-(c.ap+c.fee);shares=distributeCents(total,n,hi)}
- r.history.push({result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:Date.now()});r.current=null;saveRooms(all);openRoom(id);renderRanking()}
+ const match={roomId:id,round:(r.history||[]).length+1,result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:Date.now()};
+ try{await window.__neoFirebase.saveResult(`${id}_${match.round}`,match);_apResultsCache[`${id}_${match.round}`]=match;}catch(e){console.error('Falha ao arquivar resultado do ranking',e);return alert('Não foi possível salvar o resultado permanente no ranking. A sala não foi avançada. Confira as regras da coleção apResults no Firestore.');}
+ r.history.push({result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:match.date});r.current=null;saveRooms(all);openRoom(id);renderRanking()}
 function closeRoom(id){let all=rooms(),r=all[id];if(!r||r.creator!==me().username)return;if(!confirm('Encerrar esta sala? Ela sairá da lista de salas ativas, mas o histórico e os resultados continuarão salvos no ranking.'))return;r.status='closed';saveRooms(all);closeModal();renderMyRooms();renderRanking()}
 const MAP_ROLES=[
  {id:'RUSH',label:'RUSH',desc:'Entrada e pressão',icon:'<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M27 3 10 27h11l-2 18 19-27H26z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/></svg>'},
@@ -1119,7 +1121,12 @@ function renderMap(){
 function toggleRolePicker(){let picker=$('mapRolePicker');picker.classList.toggle('role-picker-locked');if(!picker.classList.contains('role-picker-locked'))picker.scrollIntoView({behavior:'smooth',block:'center'})}
 function chooseMapRole(role){let current=me();if(!current||!MAP_ROLES.some(r=>r.id===role))return;if(role==='SUP'){pendingMapRole=role;openModal(`<div class="eyebrow">CONFIRMAR FUNÇÃO</div><h2>Tem certeza?</h2><p class="muted">Deseja salvar SUP como sua função?</p><div class="btnrow"><button class="btn" onclick="saveMapRole('SUP','')">SIM, CONFIRMAR</button><button class="btn secondary" onclick="closeModal()">VOLTAR</button></div>`);return}if(role==='CPT'){openModal(`<div class="eyebrow">FUNÇÃO DE CAPITÃO</div><h2>Escolha uma segunda função</h2><p class="muted">CPT exige que você selecione mais uma função.</p><div class="role-grid role-grid-secondary">${MAP_ROLES.filter(r=>r.id!=='CPT').map(r=>`<button class="role-choice" onclick="saveMapRole('CPT','${r.id}')"><span class="role-icon">${r.icon}</span><b>${r.label}</b><small>${r.desc}</small></button>`).join('')}</div>`);return}saveMapRole(role,'')}
 function saveMapRole(role,secondary){let current=me();if(!current)return;let u=users();u[current.username].map=u[current.username].map||{role:'',secondaryRole:'',stats:{kills:0,matches:0,assists:0,damage:0,victories:0}};u[current.username].map.role=role;u[current.username].map.secondaryRole=secondary||'';if(!u[current.username].map.stats)u[current.username].map.stats={kills:0,matches:0,assists:0,damage:0,victories:0};saveUsers(u);closeModal();renderMap()}
-function apStatsFor(username){let out={matches:0,wins:0,losses:0,balance:0,profit:0,loss:0};for(const r of Object.values(rooms()))for(const h of (r.history||[])){const i=(h.players||[]).indexOf(username);if(i<0)continue;const v=Number((h.shares||[])[i]||0);out.matches++;if(h.result==='WIN')out.wins++;else out.losses++;out.balance+=v;if(v>0)out.profit+=v;if(v<0)out.loss+=Math.abs(v);}return out}
+function apStatsFor(username){let out={matches:0,wins:0,losses:0,balance:0,profit:0,loss:0},matches=new Map();
+ // Resultados arquivados independentes da existência da sala.
+ for(const [archiveId,h] of Object.entries(_apResultsCache||{}))matches.set(archiveId,h);
+ // Compatibilidade: também considera históricos antigos que ainda estejam nas salas.
+ for(const [roomId,r] of Object.entries(rooms()))for(let i=0;i<(r.history||[]).length;i++){const h=r.history[i],key=`${roomId}_${i+1}`;if(!matches.has(key))matches.set(key,h);}
+ for(const h of matches.values()){const i=(h.players||[]).indexOf(username);if(i<0)continue;const v=Number((h.shares||[])[i]||0);out.matches++;if(h.result==='WIN')out.wins++;else out.losses++;out.balance+=v;if(v>0)out.profit+=v;if(v<0)out.loss+=Math.abs(v);}return out}
 function setRankingMode(mode){rankingMode=mode;renderRanking()}
 function renderRanking(){let u=users(),arr=Object.entries(u);$('rankAPBtn').classList.toggle('active-rank',rankingMode==='ap');$('rankMAPBtn').classList.toggle('active-rank',rankingMode==='map');
  if(rankingMode==='ap'){$('rankHead').innerHTML='<tr><th>#</th><th>JOGADOR</th><th>WIN</th><th>NO WIN</th><th>LUCRO</th><th>PREJUÍZO</th><th>KILL</th><th>PARTIDAS</th></tr>';arr=arr.map(([n,v])=>[n,v,apStatsFor(n)]).sort((a,b)=>b[2].wins-a[2].wins);$('rankRows').innerHTML=arr.map(([n,v,st],i)=>{let extra=v.apAdminStats||{};return `<tr><td>${i+1}</td><td>${esc(v.profile?.displayName||n)}</td><td>${st.wins}</td><td>${st.losses}</td><td class="green">${money(st.profit)}</td><td class="red">${money(st.loss)}</td><td>${extra.kills||0}</td><td>${st.matches}</td></tr>`}).join('')||'<tr><td colspan="8">Sem jogadores.</td></tr>';$('rankTablePanel').querySelector('.muted')?.remove();}
@@ -1177,7 +1184,7 @@ import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, si
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/13.4.0/firebase-firestore.js";
 const firebaseConfig={apiKey:"AIzaSyBcYdPHT_jug7Av0gY9ZuulVCmCD_lVNOI",authDomain:"mod-neo.firebaseapp.com",projectId:"mod-neo",storageBucket:"mod-neo.firebasestorage.app",messagingSenderId:"219596296534",appId:"1:219596296534:web:b19d3e7686ef9089c0c6f7"};
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
-const ADMIN_UIDS=new Set(["2Aq4aFE9CBZGqLX9aG4BylFDe1v2","1JqYHzYcR3fRWN2erdIcrLMXHl83","5HHS0Yi1XzXWT7vaPz4bZaAAmcb2"]);let currentNick="",userUnsub=null,roomUnsub=null,creatingAccount=false;
+const ADMIN_UIDS=new Set(["2Aq4aFE9CBZGqLX9aG4BylFDe1v2","1JqYHzYcR3fRWN2erdIcrLMXHl83","5HHS0Yi1XzXWT7vaPz4bZaAAmcb2"]);let currentNick="",userUnsub=null,roomUnsub=null,resultUnsub=null,creatingAccount=false;
 const alias=n=>`${n}@mod-neo.firebaseapp.com`;
 function err(code){const e=new Error(code);e.code=code;return e;}
 async function register(n,p){
@@ -1186,17 +1193,23 @@ async function register(n,p){
 }
 async function login(n,p){if(!/^[a-z0-9_]{3,18}$/.test(n))throw err("auth/invalid-credential");const user=await signInWithEmailAndPassword(auth,alias(n),p);const profile=await getDoc(doc(db,"users",user.user.uid));if(!profile.exists()||profile.data().username!==n){await signOut(auth);throw err("auth/invalid-credential");}}
 async function activate(user){const q=await getDoc(doc(db,"users",user.uid));if(!q.exists())throw err("profile/missing");const nick=q.data().username;subscribe(user.uid,nick);window._myUsername=nick;setTimeout(()=>window.openApp?.(),0);}
-function stopListeners(){if(userUnsub)userUnsub();if(roomUnsub)roomUnsub();userUnsub=roomUnsub=null;}
+function stopListeners(){if(userUnsub)userUnsub();if(roomUnsub)roomUnsub();if(resultUnsub)resultUnsub();userUnsub=roomUnsub=resultUnsub=null;}
 function subscribe(uid,nick){stopListeners();currentNick=nick;window._myUsername=nick;
  userUnsub=onSnapshot(collection(db,"users"),snap=>{const all={};snap.forEach(d=>{const x=d.data();if(x.username)all[x.username]={...x};});window._usersCache=all;window._userSnapshot=JSON.parse(JSON.stringify(all));if(window.me?.()){if(document.getElementById("app").classList.contains("hidden"))window.openApp?.();else{window.renderRanking?.();window.renderMap?.();window.renderMyRooms?.();}}});
  roomUnsub=onSnapshot(collection(db,"rooms"),snap=>{const all={};snap.forEach(d=>all[d.id]=d.data());window._roomsCache=all;window._roomSnapshot=JSON.parse(JSON.stringify(all));if(window.me?.()&&!document.getElementById("app").classList.contains("hidden")){window.renderMyRooms?.();window.renderRanking?.();}});
+ resultUnsub=onSnapshot(collection(db,"apResults"),snap=>{const all={};snap.forEach(d=>all[d.id]={...d.data(),_archiveId:d.id});window._apResultsCache=all;if(window.me?.()&&!document.getElementById("app").classList.contains("hidden"))window.renderRanking?.();},e=>console.error('Falha ao carregar arquivo permanente do ranking',e));
 }
 const ready=new Promise((resolve,reject)=>{let first=true;onAuthStateChanged(auth,async user=>{window._authUser=user;if(!user){stopListeners();window._myUsername="";if(!first){document.getElementById("app")?.classList.add("hidden");document.getElementById("auth")?.classList.remove("hidden");}first=false;resolve();return;}if(creatingAccount)return;try{await activate(user);first=false;resolve();}catch(e){console.error(e);await signOut(auth);reject(e);}});});
 async function restore(){await ready;}
 async function saveUser(n,record,isSelf,isAdmin){const uid=isSelf?auth.currentUser.uid:(await getDoc(doc(db,"usernames",n))).data()?.uid;if(!uid)return;const refDoc=doc(db,"users",uid);const payload={...record,uid,username:n,updatedAt:serverTimestamp()};await setDoc(refDoc,payload,{merge:true});}
+async function saveResult(id,record){
+ const user=auth.currentUser;if(!user)throw err('auth/required');
+ const resultRef=doc(db,"apResults",id),roomRef=doc(db,"rooms",record.roomId);
+ await runTransaction(db,async tx=>{const existing=await tx.get(resultRef);if(existing.exists())return;const roomSnap=await tx.get(roomRef);if(!roomSnap.exists()||roomSnap.data().creator!==currentNick)throw err('ranking/not-room-creator');tx.set(resultRef,{...record,creator:currentNick,createdBy:user.uid,createdAt:serverTimestamp()});});
+}
 async function saveRoom(id,record){await setDoc(doc(db,"rooms",id),{...record,updatedAt:serverTimestamp()});}
 async function deleteRoom(id){await deleteDoc(doc(db,"rooms",id));}
-window.__neoFirebase={ready,register,login,restore,saveUser,saveRoom,deleteRoom,logout:()=>signOut(auth)};
+window.__neoFirebase={ready,register,login,restore,saveUser,saveRoom,saveResult,deleteRoom,logout:()=>signOut(auth)};
 window.init?.();
 window.addEventListener("DOMContentLoaded",()=>{});
 </script>
