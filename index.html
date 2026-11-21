@@ -388,11 +388,11 @@ function rooms(){return _roomsCache}
 function me(){let n=_myUsername;return n&&_usersCache[n]?{username:n,..._usersCache[n]}:null}
 function safeImg(src){const s=String(src||'');return (s.startsWith('data:image/')||s.startsWith('https://'))?s:''}
 
-function saveUsers(v){
+function saveUsers(v,forceSyncAll=false){
  const old=_userSnapshot||{};
  _usersCache=v;
  for(const [name,record] of Object.entries(v)){
-  if(JSON.stringify(old[name])===JSON.stringify(record))continue;
+  if(!forceSyncAll && JSON.stringify(old[name])===JSON.stringify(record))continue;
   if(!_authUser)return;
   const isSelf=name===_myUsername, isAdmin=isAdminUid(_authUser.uid);
   if(!isSelf&&!isAdmin)continue;
@@ -401,11 +401,11 @@ function saveUsers(v){
  _userSnapshot=JSON.parse(JSON.stringify(v));
 }
 
-function saveRooms(v){
+function saveRooms(v,forceSyncAll=false){
  const old=_roomSnapshot||{};
  _roomsCache=v;
  for(const [id,record] of Object.entries(v)){
-  if(JSON.stringify(old[id])===JSON.stringify(record))continue;
+  if(!forceSyncAll && JSON.stringify(old[id])===JSON.stringify(record))continue;
   window.__neoFirebase?.saveRoom(id,record).catch(e=>{console.error('Falha ao salvar sala',e);alert('Não foi possível sincronizar a sala. Confira as permissões do Firestore.');});
  }
  _roomSnapshot=JSON.parse(JSON.stringify(v));
@@ -554,7 +554,7 @@ async function logout(){
  showLogin();
 }
 
-function money(c){return (c/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' pts'}
+function money(c){return (Number(c||0)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+' pts'}
 function parseCents(v){let s=String(v).trim().replace(/\s/g,'');if(!s)return NaN;if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');let n=Number(s);return Number.isFinite(n)&&n>=0?Math.round(n*100):NaN}
 function distributeCents(total,n,priority){let sign=Math.sign(total),abs=Math.abs(total),base=Math.floor(abs/n),rem=abs%n,a=Array(n).fill(base*sign);for(let i=0;i<rem;i++)a[(priority+i)%n]+=sign;return a}
 function code(){let chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',s='';for(let i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)];return s}
@@ -597,8 +597,8 @@ function openRoom(id){
  let body=`<div class="eyebrow">LOBBY COMPARTILHADO</div><h2>Sala ${r.code} <span class="tag">X${r.size}</span></h2><p class="muted">${r.status==='closed'?'SALA ENCERRADA':full?'LOBBY COMPLETO':'AGUARDANDO JOGADORES'} · ${r.players.length}/${r.size}</p><div class="resultbox"><b>Código para convidar: <span class="gold">${r.code}</span></b><div class="btnrow"><button class="btn secondary" type="button" onclick="copyCode('${r.code}')">COPIAR CÓDIGO</button></div></div><div class="playerlist">${roster}</div>`;
  if(full&&r.status!=='closed'&&!r.current&&!r.history.length&&creator)body+=`<div class="btnrow"><button class="btn" type="button" onclick="configure('${id}')">CONFIGURAR PRIMEIRA PARTIDA</button></div>`;
  if(r.current)body+=`<div class="resultbox"><div class="eyebrow">AP VIRTUAL CONFIGURADO</div><div class="resultrow"><span>Valor AP</span><b>${money(r.current.ap)}</b></div><div class="resultrow"><span>Taxa</span><b>${money(r.current.fee)}</b></div><div class="resultrow"><span>HOST</span><b>${esc(r.current.host?profileFor(r.current.host).name:'Sem HOST nesta rodada')}</b></div>${creator&&r.status!=='closed'?`<div class="btnrow"><button class="btn" type="button" onclick="recordResult('${id}','WIN')">WIN</button><button class="btn danger" type="button" onclick="recordResult('${id}','NO WIN')">NO WIN</button></div>`:r.status==='closed'?'<p class="muted">Sala encerrada; resultado pendente não pode mais ser registrado.</p>':'<p class="muted">Aguardando o criador registrar o resultado.</p>'}</div>`;
- let individual=r.players.map((name)=>{let profit=0,loss=0;(r.history||[]).forEach(h=>{let j=(h.players||[]).indexOf(name),v=j>=0?(h.shares||[])[j]||0:0;if(v>0)profit+=v;if(v<0)loss+=Math.abs(v)});return `<div class="resultrow"><span><b>${esc(profileFor(name).name)}</b><small>Lucro individual: <b class="green">${money(profit)}</b><br>Prejuízo individual: <b class="red">${money(loss)}</b></small></span><b class="${profit-loss>=0?'green':'red'}">${money(profit-loss)}</b></div>`}).join('');
- let hist=(r.history||[]).map((h,i)=>{let per=(h.players||[]).map((name,j)=>`<div class="resultrow"><span>${esc(profileFor(name).name)}</span><b class="${(h.shares||[])[j]>=0?'green':'red'}">${(h.shares||[])[j]>=0?'+':''}${money((h.shares||[])[j]||0)}</b></div>`).join('');return `<div class="resultrow"><span>#${i+1} · ${h.result}</span><b class="${h.result==='WIN'?'green':'red'}">${h.result==='WIN'?'+':''}${money(h.total)}</b></div><div class="muted" style="font-size:12px;margin:4px 0 10px">Resultado individual de cada jogador:</div>${per}<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">`}).join('')||'<p class="muted">Nenhuma partida registrada.</p>';
+ let individual=r.players.map((name)=>{let profit=0,loss=0;(r.history||[]).forEach(h=>{let j=(h.players||[]).indexOf(name),v=j>=0?Number((h.shares||[])[j]||0):0;if(v>0)profit+=v;if(v<0)loss+=Math.abs(v)});return `<div class="resultrow"><span><b>${esc(profileFor(name).name)}</b><small>Lucro individual: <b class="green">${money(profit)}</b><br>Prejuízo individual: <b class="red">${money(loss)}</b></small></span><b class="${profit-loss>=0?'green':'red'}">${money(profit-loss)}</b></div>`}).join('');
+ let hist=(r.history||[]).map((h,i)=>{let per=(h.players||[]).map((name,j)=>{let val=Number((h.shares||[])[j]||0);return `<div class="resultrow"><span>${esc(profileFor(name).name)}</span><b class="${val>=0?'green':'red'}">${val>=0?'+':''}${money(val)}</b></div>`}).join('');return `<div class="resultrow"><span>#${i+1} · ${h.result}</span><b class="${h.result==='WIN'?'green':'red'}">${h.result==='WIN'?'+':''}${money(h.total)}</b></div><div class="muted" style="font-size:12px;margin:4px 0 10px">Resultado individual de cada jogador:</div>${per}<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">`}).join('')||'<p class="muted">Nenhuma partida registrada.</p>';
  body+=`<h3>Lucro e prejuízo individual acumulados</h3><div class="resultbox">${individual||'<p class="muted">Nenhum jogador.</p>'}</div><h3>Histórico da sala</h3><div class="resultbox">${hist}</div>`;
  if(r.status!=='closed'&&creator){if(!r.current&&r.history.length)body+=`<div class="btnrow"><button class="btn" type="button" onclick="configure('${id}')">INICIAR NOVA RODADA</button></div>`;body+=`<div class="btnrow"><button class="btn danger" type="button" onclick="closeRoom('${id}')">ENCERRAR SALA</button></div>`}
  if(r.status==='closed')body+='<p class="gold">Sala encerrada. O histórico foi preservado.</p>';
@@ -659,28 +659,40 @@ function calcStatsFromMatches(username,matches){
  return out;
 }
 
-async function syncAllApResultsAndUsers(){
+async function syncAllApResultsAndUsers(forceUsersSync=false){
  const matches=buildAllMatchesMap();
  const u=users();
- let changed=false;
+ const toSync=[];
  for(const [username,record] of Object.entries(u)){
   const computed=calcStatsFromMatches(username,matches);
   const saved=record.stats||{};
   const merged={
-   matches:Math.max(computed.matches,Number(saved.matches)||0),
-   wins:Math.max(computed.wins,Number(saved.wins)||0),
-   losses:Math.max(computed.losses,Number(saved.losses)||0),
-   balance:computed.matches>=(Number(saved.matches)||0)?computed.balance:(Number(saved.balance)||0),
-   profit:Math.max(computed.profit,Number(saved.profit)||0),
-   loss:Math.max(computed.loss,Number(saved.loss)||0)
+   matches:computed.matches>0?computed.matches:Number(saved.matches)||0,
+   wins:computed.wins>0?computed.wins:Number(saved.wins)||0,
+   losses:computed.losses>0?computed.losses:Number(saved.losses)||0,
+   balance:computed.matches>0?computed.balance:Number(saved.balance)||0,
+   profit:computed.profit>0?computed.profit:Number(saved.profit)||0,
+   loss:computed.loss>0?computed.loss:Number(saved.loss)||0
   };
-  if(JSON.stringify(saved)!==JSON.stringify(merged)){
+  if(JSON.stringify(saved)!==JSON.stringify(merged) || forceUsersSync){
    record.stats=merged;
-   changed=true;
+   toSync.push([username,record]);
   }
  }
- if(changed)saveUsers(u);
- if(window.__neoFirebase?.saveResult){
+ if(toSync.length && _authUser){
+  const isAdmin=isAdminUid(_authUser.uid);
+  for(const [username,record] of toSync){
+   const isSelf=username===_myUsername;
+   if(!isSelf&&!isAdmin)continue;
+   try{
+    await window.__neoFirebase?.saveUser(username,record,isSelf,isAdmin);
+   }catch(e){
+    console.warn('Falha ao sincronizar stats de',username,e);
+   }
+  }
+  _userSnapshot=JSON.parse(JSON.stringify(u));
+ }
+ if(window.__neoFirebase?.saveResult && _authUser){
   for(const [roomId,r] of Object.entries(rooms()||{})){
    const hist=Array.isArray(r?.history)?r.history:[];
    for(let i=0;i<hist.length;i++){
@@ -692,7 +704,7 @@ async function syncAllApResultsAndUsers(){
       host:h.host||null,players:[...(h.players||[])],shares:[...(h.shares||[])],date:h.date||Date.now()
      };
      _apResultsCache[key]=match;
-     window.__neoFirebase.saveResult(key,match).catch(e=>console.warn('Espelhamento apResults:',e));
+     try{await window.__neoFirebase.saveResult(key,match);}catch(e){console.warn('Espelhamento apResults:',e);}
     }
    }
   }
@@ -724,25 +736,52 @@ async function recordResult(id,result){
 
  _apResultsCache=_apResultsCache||{};
  _apResultsCache[archiveId]=match;
+
  r.history=r.history||[];
  r.history.push({result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:match.date});
  r.current=null;
 
- saveRooms(all);
- await syncAllApResultsAndUsers();
- renderRanking();
- openRoom(id);
+ _roomsCache[id]=r;
+ _roomSnapshot[id]=JSON.parse(JSON.stringify(r));
 
- try{await window.__neoFirebase.saveResult(archiveId,match);}catch(e){console.warn('Aviso ao arquivar em apResults:',e);}
+ // Atualiza estatísticas locais imediatamente para que o ranking reflita o WIN/NO WIN na hora
+ const matchesMap=buildAllMatchesMap();
+ const u=users();
+ for(const playerName of r.players){
+  if(u[playerName]){
+   u[playerName].stats=calcStatsFromMatches(playerName,matchesMap);
+  }
+ }
+ _usersCache=u;
+
+ try{
+  await window.__neoFirebase?.saveRoom(id,r);
+ }catch(e){
+  console.error('Falha ao salvar sala:',e);
+  alert('Não foi possível salvar o resultado da partida na sala.');
+ }
+
+ try{
+  await window.__neoFirebase?.saveResult(archiveId,match);
+ }catch(e){
+  console.warn('Aviso ao arquivar em apResults:',e);
+ }
+
+ await syncAllApResultsAndUsers(true);
+ renderRanking();
+ renderMyRooms();
+ openRoom(id);
 }
 
 async function closeRoom(id){
  let all=rooms(),r=all[id];
  if(!r||r.creator!==me().username)return;
  if(!confirm('Encerrar esta sala? Ela sairá da lista de salas ativas, mas o histórico e os resultados continuarão salvos no ranking.'))return;
- await syncAllApResultsAndUsers();
+ await syncAllApResultsAndUsers(true);
  r.status='closed';
- saveRooms(all);
+ _roomsCache[id]=r;
+ _roomSnapshot[id]=JSON.parse(JSON.stringify(r));
+ try{await window.__neoFirebase?.saveRoom(id,r);}catch(e){console.error('Falha ao encerrar sala:',e);}
  closeModal();
  renderMyRooms();
  renderRanking();
@@ -845,12 +884,12 @@ function apStatsFor(username){
  const computed=calcStatsFromMatches(username,matches);
  const saved=users()[username]?.stats||{};
  return {
-  matches:Math.max(computed.matches,Number(saved.matches)||0),
-  wins:Math.max(computed.wins,Number(saved.wins)||0),
-  losses:Math.max(computed.losses,Number(saved.losses)||0),
-  balance:computed.matches>=(Number(saved.matches)||0)?computed.balance:(Number(saved.balance)||0),
-  profit:Math.max(computed.profit,Number(saved.profit)||0),
-  loss:Math.max(computed.loss,Number(saved.loss)||0)
+  matches:computed.matches>0?computed.matches:Number(saved.matches)||0,
+  wins:computed.wins>0?computed.wins:Number(saved.wins)||0,
+  losses:computed.losses>0?computed.losses:Number(saved.losses)||0,
+  balance:computed.matches>0?computed.balance:Number(saved.balance)||0,
+  profit:computed.profit>0?computed.profit:Number(saved.profit)||0,
+  loss:computed.loss>0?computed.loss:Number(saved.loss)||0
  };
 }
 
@@ -983,13 +1022,44 @@ async function login(n,p){if(!/^[a-z0-9_]{3,18}$/.test(n))throw err("auth/invali
 async function activate(user){const q=await getDoc(doc(db,"users",user.uid));if(!q.exists())throw err("profile/missing");const nick=q.data().username;subscribe(user.uid,nick);window._myUsername=nick;setTimeout(()=>window.openApp?.(),0);}
 function stopListeners(){if(userUnsub)userUnsub();if(roomUnsub)roomUnsub();if(resultUnsub)resultUnsub();userUnsub=roomUnsub=resultUnsub=null;}
 function subscribe(uid,nick){stopListeners();currentNick=nick;window._myUsername=nick;
- userUnsub=onSnapshot(collection(db,"users"),snap=>{const all={};snap.forEach(d=>{const x=d.data();if(x.username)all[x.username]={...x};});window._usersCache=all;window._userSnapshot=JSON.parse(JSON.stringify(all));if(window.me?.()){if(document.getElementById("app").classList.contains("hidden"))window.openApp?.();else{window.renderRanking?.();window.renderMap?.();window.renderMyRooms?.();}}});
- roomUnsub=onSnapshot(collection(db,"rooms"),snap=>{const all={};snap.forEach(d=>all[d.id]=d.data());window._roomsCache=all;window._roomSnapshot=JSON.parse(JSON.stringify(all));window.syncAllApResultsAndUsers?.();if(window.me?.()&&!document.getElementById("app").classList.contains("hidden")){window.renderMyRooms?.();window.renderRanking?.();}});
- resultUnsub=onSnapshot(collection(db,"apResults"),snap=>{const all={};snap.forEach(d=>all[d.id]={...d.data(),_archiveId:d.id});window._apResultsCache=all;if(window.me?.()&&!document.getElementById("app").classList.contains("hidden"))window.renderRanking?.();},e=>console.warn('Aviso ao carregar apResults:',e));
+ userUnsub=onSnapshot(collection(db,"users"),snap=>{
+  const all={};
+  snap.forEach(d=>{const x=d.data();if(x.username)all[x.username]={...x};});
+  window._usersCache=all;
+  window._userSnapshot=JSON.parse(JSON.stringify(all));
+  if(window.me?.()){
+   if(document.getElementById("app").classList.contains("hidden"))window.openApp?.();
+   else{window.renderRanking?.();window.renderMap?.();window.renderMyRooms?.();}
+  }
+ });
+ roomUnsub=onSnapshot(collection(db,"rooms"),snap=>{
+  const all={};
+  snap.forEach(d=>all[d.id]=d.data());
+  window._roomsCache=all;
+  window._roomSnapshot=JSON.parse(JSON.stringify(all));
+  if(window.me?.()&&!document.getElementById("app").classList.contains("hidden")){
+   window.renderMyRooms?.();
+   window.renderRanking?.();
+  }
+ });
+ resultUnsub=onSnapshot(collection(db,"apResults"),snap=>{
+  const all={};
+  snap.forEach(d=>all[d.id]={...d.data(),_archiveId:d.id});
+  window._apResultsCache=all;
+  if(window.me?.()&&!document.getElementById("app").classList.contains("hidden")){
+   window.renderRanking?.();
+  }
+ },e=>console.warn('Aviso ao carregar apResults:',e));
 }
 const ready=new Promise((resolve,reject)=>{let first=true;onAuthStateChanged(auth,async user=>{window._authUser=user;if(!user){stopListeners();window._myUsername="";if(!first){document.getElementById("app")?.classList.add("hidden");document.getElementById("auth")?.classList.remove("hidden");}first=false;resolve();return;}if(creatingAccount)return;try{await activate(user);first=false;resolve();}catch(e){console.error(e);await signOut(auth);reject(e);}});});
 async function restore(){await ready;}
-async function saveUser(n,record,isSelf,isAdmin){const uid=isSelf?auth.currentUser.uid:(await getDoc(doc(db,"usernames",n))).data()?.uid;if(!uid)return;const refDoc=doc(db,"users",uid);const payload={...record,uid,username:n,updatedAt:serverTimestamp()};await setDoc(refDoc,payload,{merge:true});}
+async function saveUser(n,record,isSelf,isAdmin){
+ const uid=isSelf?auth.currentUser.uid:(await getDoc(doc(db,"usernames",n))).data()?.uid;
+ if(!uid)return;
+ const refDoc=doc(db,"users",uid);
+ const payload={...record,uid,username:n,updatedAt:serverTimestamp()};
+ await setDoc(refDoc,payload,{merge:true});
+}
 async function saveResult(id,record){
  const user=auth.currentUser;if(!user)throw err('auth/required');
  const resultRef=doc(db,"apResults",id);
