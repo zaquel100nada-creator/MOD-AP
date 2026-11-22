@@ -127,6 +127,7 @@ textarea{min-height:76px}
 @media(max-width:760px){.role-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.role-choice{padding:11px 5px}.map-section-head{align-items:center}}
 @media(max-width:380px){.role-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+.bank-box{position:relative;overflow:hidden}.bank-icon{width:48px;height:48px;color:#d7a5ff;margin-bottom:8px}.bank-icon svg{width:100%;height:100%}.bank-total{font-size:28px;font-weight:800;color:#e2baff;letter-spacing:.4px;margin:5px 0}
 /* Ranking compacto */
 .rank-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}.rank-toolbar .btn{padding:8px 12px}.rank-toolbar .active-rank{border-color:#c56cff;color:#e2baff;background:#28183a}
 #rankTablePanel{padding:9px!important;margin-top:9px!important}
@@ -372,7 +373,7 @@ textarea{min-height:76px}
 <h2>ENTRAR COMO ADMIN</h2>
 <p class="muted">O painel é liberado somente quando a conta autenticada corresponde ao UID administrativo autorizado no Firebase.</p>
 <p id="adminCodeError" class="error"></p><div class="btnrow"><button class="btn secondary" type="button" onclick="closeAdminLogin()">VOLTAR</button></div>
-</section><div id="rankTablePanel" class="panel"><div class="tablewrap"><table><thead id="rankHead"></thead><tbody id="rankRows"></tbody></table></div></div><section id="adminPanel" class="panel hidden"><div class="eyebrow">CONTROLE ADMINISTRATIVO</div><h2>ADMIN</h2><p class="muted">Os valores digitados são somados às estatísticas atuais do jogador.</p><div class="field"><label>Jogador</label><select id="adminPlayer" onchange="loadAdminPlayer()"></select></div><div id="adminFields"></div><div class="btnrow"><button class="btn" type="button" onclick="saveAdminStats()">SOMAR E SALVAR</button><button class="btn secondary" type="button" onclick="closeAdminPanel()">VOLTAR AO RANKING</button></div><p class="notice" id="adminMessage" role="status"></p></section>
+</section><div id="rankTablePanel" class="panel"><div id="apTeamFilters" class="rank-toolbar hidden"><button class="btn secondary" onclick="setRankingSize(2)">X2</button><button class="btn secondary" onclick="setRankingSize(3)">X3</button><button class="btn secondary" onclick="setRankingSize(4)">X4</button></div><div class="tablewrap"><table><thead id="rankHead"></thead><tbody id="rankRows"></tbody></table></div></div><section id="adminPanel" class="panel hidden"><div class="eyebrow">CONTROLE ADMINISTRATIVO</div><h2>ADMIN</h2><p class="muted">Os valores digitados são somados às estatísticas atuais do jogador.</p><div class="field"><label>Jogador</label><select id="adminPlayer" onchange="loadAdminPlayer()"></select></div><div id="adminFields"></div><div class="btnrow"><button class="btn" type="button" onclick="saveAdminStats()">SOMAR E SALVAR</button><button class="btn secondary" type="button" onclick="closeAdminPanel()">VOLTAR AO RANKING</button></div><p class="notice" id="adminMessage" role="status"></p></section>
  </main></div>
 </section>
 <div id="modal" class="modal" onclick="if(event.target===this)closeModal()"><div class="modalbox"><button class="close" type="button" onclick="closeModal()">FECHAR</button><div id="modalContent" style="padding-top:22px"></div></div></div>
@@ -380,6 +381,7 @@ textarea{min-height:76px}
 const ADMIN_UIDS=['2Aq4aFE9CBZGqLX9aG4BylFDe1v2','1JqYHzYcR3fRWN2erdIcrLMXHl83','5HHS0Yi1XzXWT7vaPz4bZaAAmcb2'];
 function isAdminUid(uid){return !!uid&&ADMIN_UIDS.includes(uid)}
 let rankingMode='ap';
+let rankingSize=2;
 let pendingAvatar='';
 const $=id=>document.getElementById(id);
 var _usersCache={},_roomsCache={},_apResultsCache={},_authUser=null,_myUsername='',_userUnsub=null,_roomUnsub=null,_resultUnsub=null,_userSnapshot={},_roomSnapshot={};
@@ -560,13 +562,14 @@ function distributeCents(total,n,priority){let sign=Math.sign(total),abs=Math.ab
 function code(){let chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',s='';for(let i=0;i<6;i++)s+=chars[Math.floor(Math.random()*chars.length)];return s}
 function profileFor(username){let u=users()[username];return {username,name:u?.profile?.displayName||username,pic:safeImg(u?.profile?.avatar||'')}}
 
-function openCreate(){openModal(`<div class="eyebrow">NOVA OPERAÇÃO</div><h2>Criar sala</h2><p class="muted">Escolha a quantidade de participantes.</p><div class="cards" style="grid-template-columns:repeat(3,1fr)"><button class="btn" type="button" onclick="createRoom(2)">X2<br><small>2 jogadores</small></button><button class="btn" type="button" onclick="createRoom(3)">X3<br><small>3 jogadores</small></button><button class="btn" type="button" onclick="createRoom(4)">X4<br><small>4 jogadores</small></button></div>`)}
+function openCreate(){openModal(`<div class="eyebrow">NOVA OPERAÇÃO</div><h2>Criar sala</h2><p class="muted">Primeiro, escolha a quantidade de participantes.</p><div class="cards" style="grid-template-columns:repeat(3,1fr)"><button class="btn" type="button" onclick="chooseRoomMode(2)">X2<br><small>2 jogadores</small></button><button class="btn" type="button" onclick="chooseRoomMode(3)">X3<br><small>3 jogadores</small></button><button class="btn" type="button" onclick="chooseRoomMode(4)">X4<br><small>4 jogadores</small></button></div>`)}
+function chooseRoomMode(size){openModal(`<div class="eyebrow">FORMATO DA SALA</div><h2>X${size}</h2><p class="muted">Escolha como os resultados serão calculados.</p><div class="btnrow"><button class="btn" onclick="createRoom(${size},'normal')">NORMAL<br><small>Divisão após cada partida</small></button><button class="btn" onclick="createRoom(${size},'banca')">BANCA<br><small>Acumular no cofrinho</small></button></div>`)}
 
-function createRoom(size){
+function createRoom(size,mode='normal'){
  let all=rooms(),id;
  do{id=code()}while(all[id]);
  let c=me();
- all[id]={code:id,size,creator:c.username,players:[c.username],status:'waiting',history:[],current:null,lastAp:null,lastFee:null,lastHost:null,created:Date.now()};
+ all[id]={code:id,size,mode,bankBalance:0,bankClosed:false,creator:c.username,players:[c.username],status:'waiting',history:[],current:null,lastAp:null,lastFee:null,lastHost:null,created:Date.now()};
  saveRooms(all);
  closeModal();
  openRoom(id);
@@ -586,21 +589,24 @@ function joinRoom(){
 }
 
 function renderMyRooms(){
- let c=me(),all=rooms(),list=Object.values(all).filter(r=>r.players.includes(c.username)&&r.status!=='closed');
- $('myRooms').innerHTML=list.length?list.map(r=>`<div class="card" onclick="openRoom('${r.code}')"><div class="eyebrow">SALA ATIVA</div><div class="roomcode">${r.code}</div><div class="muted">X${r.size} · ${r.players.length}/${r.size} jogadores</div><span class="tag">${r.players.length===r.size?'LOBBY COMPLETO':'AGUARDANDO'}</span></div>`).join(''):'<div class="empty">Nenhuma sala ativa.</div>';
+ let c=me(),all=rooms(),list=Object.values(all).filter(r=>r.players.includes(c.username)&&(r.status!=='closed'||(r.mode==='banca'&&!r.bankClosed)));
+ $('myRooms').innerHTML=list.length?list.map(r=>`<div class="card" onclick="openRoom('${r.code}')"><div class="eyebrow">SALA ATIVA</div><div class="roomcode">${r.code}</div><div class="muted">X${r.size} · ${r.players.length}/${r.size} jogadores · ${r.mode==='banca'?'BANCA':'NORMAL'}</div><span class="tag">${r.bankClosed?'BANCA ENCERRADA':r.status==='closed'?'SALA ENCERRADA':r.players.length===r.size?'LOBBY COMPLETO':'AGUARDANDO'}</span></div>`).join(''):'<div class="empty">Nenhuma sala ativa.</div>';
 }
 
 function openRoom(id){
  let r=rooms()[id];if(!r)return;
  let c=me(),creator=r.creator===c.username,full=r.players.length===r.size;
  let roster=r.players.map(n=>{let p=profileFor(n);return `<div class="player">${p.pic?`<img class="avatar" src="${p.pic}" alt="">`:`<div class="avatar"></div>`}<div><b>${esc(p.name)}</b><small>${n===r.creator?'CRIADOR':'JOGADOR'}</small></div></div>`}).join('');
- let body=`<div class="eyebrow">LOBBY COMPARTILHADO</div><h2>Sala ${r.code} <span class="tag">X${r.size}</span></h2><p class="muted">${r.status==='closed'?'SALA ENCERRADA':full?'LOBBY COMPLETO':'AGUARDANDO JOGADORES'} · ${r.players.length}/${r.size}</p><div class="resultbox"><b>Código para convidar: <span class="gold">${r.code}</span></b><div class="btnrow"><button class="btn secondary" type="button" onclick="copyCode('${r.code}')">COPIAR CÓDIGO</button></div></div><div class="playerlist">${roster}</div>`;
+ let body=`<div class="eyebrow">LOBBY COMPARTILHADO</div><h2>Sala ${r.code} <span class="tag">X${r.size}</span> <span class="tag">${r.mode==='banca'?'BANCA':'NORMAL'}</span></h2><p class="muted">${r.status==='closed'?'SALA ENCERRADA':full?'LOBBY COMPLETO':'AGUARDANDO JOGADORES'} · ${r.players.length}/${r.size}</p><div class="resultbox"><b>Código para convidar: <span class="gold">${r.code}</span></b><div class="btnrow"><button class="btn secondary" type="button" onclick="copyCode('${r.code}')">COPIAR CÓDIGO</button></div></div><div class="playerlist">${roster}</div>`;
  if(full&&r.status!=='closed'&&!r.current&&!r.history.length&&creator)body+=`<div class="btnrow"><button class="btn" type="button" onclick="configure('${id}')">CONFIGURAR PRIMEIRA PARTIDA</button></div>`;
  if(r.current)body+=`<div class="resultbox"><div class="eyebrow">AP VIRTUAL CONFIGURADO</div><div class="resultrow"><span>Valor AP</span><b>${money(r.current.ap)}</b></div><div class="resultrow"><span>Taxa</span><b>${money(r.current.fee)}</b></div><div class="resultrow"><span>HOST</span><b>${esc(r.current.host?profileFor(r.current.host).name:'Sem HOST nesta rodada')}</b></div>${creator&&r.status!=='closed'?`<div class="btnrow"><button class="btn" type="button" onclick="recordResult('${id}','WIN')">WIN</button><button class="btn danger" type="button" onclick="recordResult('${id}','NO WIN')">NO WIN</button></div>`:r.status==='closed'?'<p class="muted">Sala encerrada; resultado pendente não pode mais ser registrado.</p>':'<p class="muted">Aguardando o criador registrar o resultado.</p>'}</div>`;
+ let bankPanel=r.mode==='banca'?`<div class="resultbox bank-box"><div class="bank-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M8 18h32v23H8zM6 18l18-12 18 12M18 25h12M24 22v12m-5-6h10" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 18v-5h20v5" fill="none" stroke="currentColor" stroke-width="2.8"/></svg></div><div class="eyebrow">COFRINHO DA BANCA</div><div class="bank-total">${money(r.bankBalance||0)}</div><p class="muted">WIN adiciona saldo · NO WIN desconta, podendo ficar negativo</p>${r.bankClosed?'<span class="tag">BANCA ENCERRADA</span>':`<div class="muted">${r.status==='closed'?'Sala encerrada · banca ainda aberta':'Banca em andamento'}</div>`}</div>`:'';
+ body+=bankPanel;
  let individual=r.players.map((name)=>{let profit=0,loss=0;(r.history||[]).forEach(h=>{let j=(h.players||[]).indexOf(name),v=j>=0?Number((h.shares||[])[j]||0):0;if(v>0)profit+=v;if(v<0)loss+=Math.abs(v)});return `<div class="resultrow"><span><b>${esc(profileFor(name).name)}</b><small>Lucro individual: <b class="green">${money(profit)}</b><br>Prejuízo individual: <b class="red">${money(loss)}</b></small></span><b class="${profit-loss>=0?'green':'red'}">${money(profit-loss)}</b></div>`}).join('');
- let hist=(r.history||[]).map((h,i)=>{let per=(h.players||[]).map((name,j)=>{let val=Number((h.shares||[])[j]||0);return `<div class="resultrow"><span>${esc(profileFor(name).name)}</span><b class="${val>=0?'green':'red'}">${val>=0?'+':''}${money(val)}</b></div>`}).join('');return `<div class="resultrow"><span>#${i+1} · ${h.result}</span><b class="${h.result==='WIN'?'green':'red'}">${h.result==='WIN'?'+':''}${money(h.total)}</b></div><div class="muted" style="font-size:12px;margin:4px 0 10px">Resultado individual de cada jogador:</div>${per}<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">`}).join('')||'<p class="muted">Nenhuma partida registrada.</p>';
+ let hist=(r.history||[]).map((h,i)=>{let per=(h.players||[]).map((name,j)=>{let val=Number((h.shares||[])[j]||0);return `<div class="resultrow"><span>${esc(profileFor(name).name)}</span><b class="${val>=0?'green':'red'}">${val>=0?'+':''}${money(val)}</b></div>`}).join('');let bankInfo=h.mode==='banca'?`<div class="muted" style="font-size:12px;margin:4px 0">Movimento da banca: <b class="${Number(h.bankDelta||0)>=0?'green':'red'}">${Number(h.bankDelta||0)>=0?'+':''}${money(h.bankDelta||0)}</b>${h.bankSettlement?' · divisão final':''}</div>`:'';return `<div class="resultrow"><span>#${i+1} · ${h.result}</span><b class="${h.result==='NO WIN'?'red':'green'}">${h.result==='NO WIN'?'-': '+'}${money(h.total)}</b></div>${bankInfo}<div class="muted" style="font-size:12px;margin:4px 0 10px">Resultado individual de cada jogador:</div>${per}<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">`}).join('')||'<p class="muted">Nenhuma partida registrada.</p>';
  body+=`<h3>Lucro e prejuízo individual acumulados</h3><div class="resultbox">${individual||'<p class="muted">Nenhum jogador.</p>'}</div><h3>Histórico da sala</h3><div class="resultbox">${hist}</div>`;
  if(r.status!=='closed'&&creator){if(!r.current&&r.history.length)body+=`<div class="btnrow"><button class="btn" type="button" onclick="configure('${id}')">INICIAR NOVA RODADA</button></div>`;body+=`<div class="btnrow"><button class="btn danger" type="button" onclick="closeRoom('${id}')">ENCERRAR SALA</button></div>`}
+ if(r.mode==='banca'&&!r.bankClosed&&creator&&r.status==='closed')body+=`<div class="btnrow"><button class="btn danger" type="button" onclick="closeBank('${id}')">ENCERRAR BANCA E DIVIDIR SALDO</button></div>`;
  if(r.status==='closed')body+='<p class="gold">Sala encerrada. O histórico foi preservado.</p>';
  openModal(body);
 }
@@ -650,8 +656,7 @@ function calcStatsFromMatches(username,matches){
   const i=players.indexOf(username);
   if(i<0)continue;
   const v=Number(shares[i]||0);
-  out.matches++;
-  if(h.result==='WIN')out.wins++;else out.losses++;
+  if(!h.bankSettlement){out.matches++;if(h.result==='WIN')out.wins++;else if(h.result==='NO WIN')out.losses++;}
   out.balance+=v;
   if(v>0)out.profit+=v;
   if(v<0)out.loss+=Math.abs(v);
@@ -701,7 +706,7 @@ async function syncAllApResultsAndUsers(forceUsersSync=false){
      const h=hist[i];
      const match={
       roomId,round:i+1,result:h.result,total:h.total,ap:h.ap,fee:h.fee,
-      host:h.host||null,players:[...(h.players||[])],shares:[...(h.shares||[])],date:h.date||Date.now()
+      host:h.host||null,players:[...(h.players||[])],shares:[...(h.shares||[])],date:h.date||Date.now(),...(h.mode?{mode:h.mode}:{}),...(h.bankDelta!==undefined?{bankDelta:h.bankDelta}:{}),...(h.bankBalance!==undefined?{bankBalance:h.bankBalance}:{}),...(h.bankSettlement?{bankSettlement:true}:{})
      };
      _apResultsCache[key]=match;
      try{await window.__neoFirebase.saveResult(key,match);}catch(e){console.warn('Espelhamento apResults:',e);}
@@ -714,31 +719,31 @@ async function syncAllApResultsAndUsers(forceUsersSync=false){
 async function recordResult(id,result){
  let all=rooms(),r=all[id];
  if(!r||r.creator!==me().username||!r.current||r.status==='closed')return;
- let c=r.current,n=r.players.length,first=!r.history.length,hi=Math.max(0,r.players.indexOf(c.host)),shares,total;
- if(result==='WIN'){
-  let gross=2*c.ap-c.fee;
-  if(first&&c.host){
-   let remainder=gross-c.ap,each=Math.round(remainder/n);
-   shares=Array(n).fill(each);
-   shares[hi]+=c.ap;
-   total=shares.reduce((a,b)=>a+b,0);
-  }else{
+ let c=r.current,n=r.players.length,first=!r.history.length,hi=Math.max(0,r.players.indexOf(c.host)),shares,total,bankDelta=0;
+ if(r.mode==='banca'){
+  shares=Array(n).fill(0);
+  if(result==='WIN'){
+   const gross=2*c.ap-c.fee;
+   if(first&&c.host){shares[hi]=c.ap;bankDelta=gross-c.ap;}else bankDelta=gross;
    total=gross;
-   shares=distributeCents(total,n,0);
+  }else{
+   total=-(c.ap+c.fee);bankDelta=total;
   }
- }else{
-  total=-(c.ap+c.fee);
-  shares=distributeCents(total,n,hi);
- }
+  r.bankBalance=Number(r.bankBalance||0)+bankDelta;
+ }else if(result==='WIN'){
+  let gross=2*c.ap-c.fee;
+  if(first&&c.host){let remainder=gross-c.ap,each=Math.round(remainder/n);shares=Array(n).fill(each);shares[hi]+=c.ap;total=shares.reduce((a,b)=>a+b,0);}
+  else{total=gross;shares=distributeCents(total,n,0);}
+ }else{total=-(c.ap+c.fee);shares=distributeCents(total,n,hi);}
  const roundNum=(r.history||[]).length+1;
  const archiveId=`${id}_${roundNum}`;
- const match={roomId:id,round:roundNum,result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:Date.now()};
+ const match={roomId:id,round:roundNum,result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:Date.now(),...(r.mode==='banca'?{mode:'banca',bankDelta,bankBalance:r.bankBalance}: {})};
 
  _apResultsCache=_apResultsCache||{};
  _apResultsCache[archiveId]=match;
 
  r.history=r.history||[];
- r.history.push({result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:match.date});
+ r.history.push({result,total,ap:c.ap,fee:c.fee,host:first?c.host:null,players:[...r.players],shares,date:match.date,...(r.mode==='banca'?{mode:'banca',bankDelta,bankBalance:r.bankBalance}: {})});
  r.current=null;
 
  _roomsCache[id]=r;
@@ -776,7 +781,8 @@ async function recordResult(id,result){
 async function closeRoom(id){
  let all=rooms(),r=all[id];
  if(!r||r.creator!==me().username)return;
- if(!confirm('Encerrar esta sala? Ela sairá da lista de salas ativas, mas o histórico e os resultados continuarão salvos no ranking.'))return;
+ if(r.current)return alert('Registre o resultado da partida atual antes de encerrar a sala.');
+ if(!confirm(r.mode==='banca'?'Encerrar as partidas desta sala? A banca continuará aberta e poderá ser encerrada separadamente.':'Encerrar esta sala? O histórico e os resultados continuarão salvos no ranking.'))return;
  await syncAllApResultsAndUsers(true);
  r.status='closed';
  _roomsCache[id]=r;
@@ -785,6 +791,22 @@ async function closeRoom(id){
  closeModal();
  renderMyRooms();
  renderRanking();
+}
+
+async function closeBank(id){
+ let all=rooms(),r=all[id];
+ if(!r||r.creator!==me().username||r.mode!=='banca'||r.bankClosed||r.current||r.status!=='closed')return;
+ if(r.players.length!==r.size)return alert('A banca só pode ser encerrada quando todos os jogadores da sala estiverem presentes.');
+ if(!confirm(`Encerrar a banca com saldo de ${money(r.bankBalance||0)} e dividir igualmente entre ${r.players.length} jogadores?`))return;
+ const total=Number(r.bankBalance||0),shares=distributeCents(total,r.players.length,0);
+ const roundNum=(r.history||[]).length+1,date=Date.now();
+ const settlement={roomId:id,round:roundNum,result:'BANCA',total,ap:0,fee:0,host:null,players:[...r.players],shares,date,mode:'banca',bankSettlement:true};
+ r.history=r.history||[];
+ r.history.push({result:'BANCA',total,ap:0,fee:0,host:null,players:[...r.players],shares,date,mode:'banca',bankSettlement:true});
+ r.bankClosed=true;r.bankSettled=true;r.status='closed';r.bankBalance=0;
+ _roomsCache[id]=r;_roomSnapshot[id]=JSON.parse(JSON.stringify(r));_apResultsCache=_apResultsCache||{};_apResultsCache[`${id}_${roundNum}`]=settlement;
+ try{await window.__neoFirebase?.saveRoom(id,r);await window.__neoFirebase?.saveResult(`${id}_${roundNum}`,settlement);}catch(e){console.error('Falha ao encerrar banca:',e);alert('Não foi possível salvar o encerramento da banca.');return;}
+ await syncAllApResultsAndUsers(true);closeModal();renderMyRooms();renderRanking();
 }
 
 const MAP_ROLES=[
@@ -894,15 +916,28 @@ function apStatsFor(username){
 }
 
 function setRankingMode(mode){rankingMode=mode;renderRanking()}
+function setRankingSize(size){rankingSize=size;renderRanking()}
+function apTeamStats(size){
+ const matches=buildAllMatchesMap(),teams=new Map();
+ for(const h of matches.values()){
+  const room=rooms()[h.roomId]||{},n=Number(room.size||h.players?.length||0);if(n!==size||!Array.isArray(h.players)||h.players.length!==size)continue;
+  const key=[...h.players].sort().join('|');let t=teams.get(key);if(!t){t={players:[...h.players],matches:0,wins:0,losses:0,balance:0,profit:0,loss:0};teams.set(key,t);}
+  if(!h.bankSettlement){t.matches++;if(h.result==='WIN')t.wins++;else if(h.result==='NO WIN')t.losses++;}
+  for(const v0 of (h.shares||[])){const v=Number(v0)||0;t.balance+=v;if(v>0)t.profit+=v;if(v<0)t.loss+=Math.abs(v);}
+ }
+ return [...teams.values()].sort((a,b)=>b.balance-a.balance||b.wins-a.wins||b.profit-a.profit);
+}
 
 function renderRanking(){
  let u=users(),arr=Object.entries(u);
  $('rankAPBtn').classList.toggle('active-rank',rankingMode==='ap');
  $('rankMAPBtn').classList.toggle('active-rank',rankingMode==='map');
+ $('apTeamFilters').classList.toggle('hidden',rankingMode!=='ap');
+ $('apTeamFilters').querySelectorAll('button').forEach(b=>b.classList.toggle('active-rank',Number(b.textContent.replace('X',''))===rankingSize));
  if(rankingMode==='ap'){
-  $('rankHead').innerHTML='<tr><th>#</th><th>JOGADOR</th><th>WIN</th><th>NO WIN</th><th>LUCRO</th><th>PREJUÍZO</th><th>KILL</th><th>PARTIDAS</th></tr>';
-  arr=arr.map(([n,v])=>[n,v,apStatsFor(n)]).sort((a,b)=>b[2].wins-a[2].wins||b[2].profit-a[2].profit);
-  $('rankRows').innerHTML=arr.map(([n,v,st],i)=>{let extra=v.apAdminStats||{};return `<tr><td>${i+1}</td><td>${esc(v.profile?.displayName||n)}</td><td>${st.wins}</td><td>${st.losses}</td><td class="green">${money(st.profit)}</td><td class="red">${money(st.loss)}</td><td>${Number(extra.kills)||0}</td><td>${st.matches}</td></tr>`}).join('')||'<tr><td colspan="8">Sem jogadores.</td></tr>';
+  $('rankHead').innerHTML='<tr><th>#</th><th>EQUIPE</th><th>WIN</th><th>NO WIN</th><th>SALDO</th><th>LUCRO</th><th>PREJUÍZO</th><th>PARTIDAS</th></tr>';
+  const teams=apTeamStats(rankingSize);
+  $('rankRows').innerHTML=teams.map((t,i)=>{let names=t.players.map(n=>esc(users()[n]?.profile?.displayName||n)).join(' + ');return `<tr><td>${i+1}</td><td>${names}</td><td>${t.wins}</td><td>${t.losses}</td><td class="${t.balance>=0?'green':'red'}">${money(t.balance)}</td><td class="green">${money(t.profit)}</td><td class="red">${money(t.loss)}</td><td>${t.matches}</td></tr>`}).join('')||`<tr><td colspan="8">Nenhuma equipe X${rankingSize} com partidas registradas.</td></tr>`;
  }else{
   $('rankHead').innerHTML='<tr><th>#</th><th>JOGADOR</th><th>FUNÇÃO</th><th>SCORE</th><th>KILL</th><th>PARTIDAS</th><th>VITÓRIAS</th></tr>';
   arr=arr.sort((a,b)=>mapScore(mapStatsOf(b[1]))-mapScore(mapStatsOf(a[1])));
